@@ -4,19 +4,50 @@ const helper = @import("help.zig");
 const fmt = helper.IO;
 
 pub fn main() !void {
-    var std_in_buffer:[1024]u8 = undefined;
-    var std_out_buffer:[1024]u8 = undefined;
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    var allocator = gpa.allocator();
 
-    var stdout_file = std.fs.File.stdout().writer(&std_out_buffer);
-    const stdout = &stdout_file.interface;
+    var stack =try helper.Stack.init(&allocator);
+    defer stack.deinit();
     
-    var stdin_reader_wrapper = std.fs.File.stdin().reader(&std_in_buffer);
-    const stdin: *std.Io.Reader = &stdin_reader_wrapper.interface;
-   
-    // try progress.read_folder();
-    try fmt.print(stdout,"Hello Test");
+    try stack.put("python",helper.Stack.run.Python);
 
-    try stdout.flush();
+    var read_buf: [512]u8 = undefined;
+    // get a real File.Reader for stdin
+    const stdin_reader = std.fs.File.stdin().reader(&read_buf);
+
+    // wrap
+    var wrapped = fmt.init(stdin_reader);
+
+    // get the interface pointer
+    const reader: *std.Io.Reader = wrapped.interface();
+
+    var out_buf: [128]u8 = undefined;
+    var stdout_writer = std.fs.File.stdout().writer(&out_buf);
+    const writer: *std.Io.Writer = &stdout_writer.interface;
+
+    try writer.writeAll("Type something:");
+    try writer.flush();
+
+    // read until newline
+    var condition = true;
+    var output:[]const u8 = "";
+    while (condition) {
+        const line = reader.takeDelimiterExclusive('\n') catch |err| switch (err) {
+            error.EndOfStream => break,
+            else => return err,
+        };
+
+        // consume the delimiter
+        reader.toss(1);
+
+        // use `line`
+        output = line;
+        condition = false;
+    }
+
+    try writer.print("You Type:{s}",.{output});
+    stack.call(output);
+    try writer.flush();
 }
-
 
