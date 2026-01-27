@@ -1,6 +1,5 @@
-
 const std = @import("std");
-
+const python = @import("stack/python.zig");
 // A simple Reader wrapper
 pub const IO = struct {
     // concrete reader backing storage
@@ -17,17 +16,20 @@ pub const IO = struct {
     pub fn interface(self: *IO) *std.Io.Reader {
         return &self.reader_impl.interface;
     }
+
+    pub fn clearScreen() !void{
+        std.debug.print("\x1b[2J\x1b[H",.{});
+    }
 };
 
 pub const Stack = struct{
     const FuncType = *const fn() void;
     allocator:*std.mem.Allocator,
     map:std.StringHashMap(FuncType),
-
     pub const run = struct{
         pub fn Python() void{
-        std.debug.print("Use Python\n",.{});
-    }
+           python.run();
+        }
         pub fn NodeJS() void{
         std.debug.print("Use NodeJS\n",.{});
         }
@@ -56,4 +58,5 @@ pub const Stack = struct{
         self.map.deinit();
     }
 };
+
 

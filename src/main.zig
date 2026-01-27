@@ -1,53 +1,44 @@
 const std = @import("std");
-const progress = @import("progress.zig");
-const helper = @import("help.zig");
-const fmt = helper.IO;
+const httpz = @import("httpz");
+
+const PORT = 8801;
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    var allocator = gpa.allocator();
+    const allocator = gpa.allocator();
 
-    var stack =try helper.Stack.init(&allocator);
-    defer stack.deinit();
-    
-    try stack.put("python",helper.Stack.run.Python);
+    var server = try httpz.Server(void).init(allocator, .{
+        .port = PORT,
+        .request = .{
+            .max_form_count = 20,
+        },
+    }, {});
+    defer server.deinit();
+    defer server.stop();
 
-    var read_buf: [512]u8 = undefined;
-    // get a real File.Reader for stdin
-    const stdin_reader = std.fs.File.stdin().reader(&read_buf);
+    var router = try server.router(.{});
 
-    // wrap
-    var wrapped = fmt.init(stdin_reader);
+    router.get("/", index, .{});
+    router.post("/form_data", formPost, .{});
 
-    // get the interface pointer
-    const reader: *std.Io.Reader = wrapped.interface();
-
-    var out_buf: [128]u8 = undefined;
-    var stdout_writer = std.fs.File.stdout().writer(&out_buf);
-    const writer: *std.Io.Writer = &stdout_writer.interface;
-
-    try writer.writeAll("Type something:");
-    try writer.flush();
-
-    // read until newline
-    var condition = true;
-    var output:[]const u8 = "";
-    while (condition) {
-        const line = reader.takeDelimiterExclusive('\n') catch |err| switch (err) {
-            error.EndOfStream => break,
-            else => return err,
-        };
-
-        // consume the delimiter
-        reader.toss(1);
-
-        // use `line`
-        output = line;
-        condition = false;
-    }
-
-    try writer.print("You Type:{s}",.{output});
-    stack.call(output);
-    try writer.flush();
+    std.debug.print("listening http://localhost:{d}/\n", .{PORT});
+    try server.listen();
 }
+
+fn index(_: *httpz.Request, res: *httpz.Response) !void {
+    res.body = "Hello from GET route";
+}
+
+fn formPost(req: *httpz.Request, res: *httpz.Response) !void {
+    var it = (try req.formData()).iterator();
+
+    res.content_type = .TEXT;
+    const w = res.writer();
+
+    while (it.next()) |kv| {
+        try w.print("{s}={s}\n", .{ kv.key, kv.value });
+    }
+}
+
+
 
