@@ -1,44 +1,34 @@
 const std = @import("std");
-const httpz = @import("httpz");
+const API = @import("help.zig").API;
+const tk = @import("tokamak");
+const PORT = 8080;
 
-const PORT = 8801;
+const routes: []const tk.Route = &.{
+    tk.static.dir("src/static", .{}),
+    .get("/", tk.static.file("src/static/index.html")),
+    
+    // Different scopes for different API groups
+    .group("/api", &.{
+        tk.logger(.{.scope = .rest_api}, &.{
+            .router(API)
+        })
+    }),
+    
+    .group("/api/ssh", &.{
+        tk.logger(.{.scope = .ssh_api}, &.{
+            .router(API.SSH)
+        })
+    })
+};
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
-
-    var server = try httpz.Server(void).init(allocator, .{
-        .port = PORT,
-        .request = .{
-            .max_form_count = 20,
-        },
-    }, {});
-    defer server.deinit();
-    defer server.stop();
-
-    var router = try server.router(.{});
-
-    router.get("/", index, .{});
-    router.post("/form_data", formPost, .{});
-
-    std.debug.print("listening http://localhost:{d}/\n", .{PORT});
-    try server.listen();
+    defer _ = gpa.deinit();
+    
+    var server = try tk.Server.init(allocator, routes, .{ .listen = .{ .port = PORT } });
+    std.debug.print("Server Started At:http://localhost:{d}\n",.{PORT});
+    try server.start();
 }
-
-fn index(_: *httpz.Request, res: *httpz.Response) !void {
-    res.body = "Hello from GET route";
-}
-
-fn formPost(req: *httpz.Request, res: *httpz.Response) !void {
-    var it = (try req.formData()).iterator();
-
-    res.content_type = .TEXT;
-    const w = res.writer();
-
-    while (it.next()) |kv| {
-        try w.print("{s}={s}\n", .{ kv.key, kv.value });
-    }
-}
-
 
 
